@@ -48,6 +48,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       .on('message', this.onClientMessage.bind(this))
       .on('close', this.onClientClose.bind(this))
       .on('pong', this.onClientPong.bind(this))
+      .on('error', (error) => {
+        debug('error', error)
+      })
 
     this
       .on(WebSocketAdapterEvent.Heartbeat, this.onHeartbeat.bind(this))
@@ -62,6 +65,10 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   public getClientId(): string {
     return this.clientId
+  }
+
+  public getClientAddress(): string {
+    return this.clientAddress
   }
 
   public onUnsubscribed(subscriptionId: string): void {
@@ -176,14 +183,19 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
         { period: period, rate: rate },
       )
 
-    const hits = await Promise.all(
-      rateLimits
-        .map(({ period, rate }) =>  hit(period, rate))
-    )
 
-    debug('rate limit check %s: %o = %o', client, rateLimits.map(({ period }) => period), hits)
+    for (const { rate, period } of rateLimits) {
+      const isRateLimited = await hit(period, rate)
 
-    return hits.some((thresholdCrossed) => thresholdCrossed)
+
+      if (isRateLimited) {
+        debug('rate limited %s: %d messages / %d ms exceeded', client, rate, period)
+
+        return true
+      }
+    }
+
+    return false
   }
 
   private onClientPong() {
